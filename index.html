@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>¿Cuántos países sabes?</title>
+<style>
+  :root {
+    --bg: #f6f4ee; --surface: #fffefb; --surface-2: #f0ede4; --ink: #1b1b19; --ink-2: #57554f; --muted: #8d8a82;
+    --border: rgba(20, 20, 18, 0.1); --ocean: #dfeaf5; --land: #d8d4c8; --land-line: #fbfaf6;
+    --found: #1baf7a; --found-2: #12865d; --territory: #9fd9c0; --missing: #e66767; --hint: #f2a40e; --accent: #2a78d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1012; --surface: #18191b; --surface-2: #222326; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #8d8a82;
+      --border: rgba(255, 255, 255, 0.1); --ocean: #142231; --land: #3a3b3d; --land-line: #18191b;
+      --found: #1fbf86; --found-2: #2bd99a; --territory: #1d5e47; --missing: #e66767; --accent: #3987e5;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 18px 20px 40px; }
+  header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.02em; }
+  h1 span { color: var(--found); }
+  .controls { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; align-items: center; }
+  select, button { font: inherit; }
+  select { padding: 7px 10px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface); color: var(--ink); }
+  .btn { padding: 8px 14px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface); color: var(--ink); cursor: pointer; font-weight: 500; }
+  .btn:hover { background: var(--surface-2); }
+  .btn.primary { background: var(--accent); color: #fff; border-color: transparent; }
+  .btn.danger { color: var(--missing); }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+
+  .bar { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; margin-bottom: 12px; }
+  .input-wrap { position: relative; }
+  #guess {
+    width: 100%; font-size: 20px; padding: 14px 16px; border-radius: 14px; border: 2px solid var(--border);
+    background: var(--surface); color: var(--ink); outline: none; transition: border-color .15s, box-shadow .15s;
+  }
+  #guess:focus { border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
+  #guess.ok { border-color: var(--found); box-shadow: 0 0 0 4px color-mix(in srgb, var(--found) 25%, transparent); }
+  #guess.dup { border-color: var(--hint); }
+  #guess:disabled { opacity: .6; }
+  .feedback { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font-size: 13px; color: var(--muted); pointer-events: none; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 8px 16px; text-align: center; min-width: 120px; }
+  .stat b { display: block; font-size: 24px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .stat small { color: var(--ink-2); font-size: 12px; }
+  .stat.low b { color: var(--missing); }
+  .progress { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; margin-bottom: 14px; }
+  .progress i { display: block; height: 100%; width: 0; background: var(--found); transition: width .3s; }
+
+  .map-card { position: relative; background: var(--ocean); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; touch-action: none; }
+  #map { display: block; width: 100%; height: auto; aspect-ratio: 1010 / 660; cursor: grab; user-select: none; }
+  #map.dragging { cursor: grabbing; }
+  #map path, #map circle { fill: var(--land); stroke: var(--land-line); stroke-width: 0.4; vector-effect: non-scaling-stroke; transition: fill .35s; }
+  #map .off path { opacity: .35; }
+  #map .t.found path, #map .t.found circle { fill: var(--territory); }
+  #map .c.found path, #map .c.found circle { fill: var(--found); }
+  #map .c.missing path, #map .c.missing circle { fill: var(--missing); }
+  #map .c.flash path, #map .c.flash circle { animation: flash 1s ease-out; }
+  #map .c.hint path, #map .c.hint circle { animation: hint 0.8s ease-in-out infinite alternate; }
+  #map circle { stroke-width: 1; }
+  #map .c.found circle, #map .c.missing circle { stroke: #fff; }
+  @keyframes flash { 0% { fill: var(--found-2); filter: brightness(1.5); } 100% { filter: none; } }
+  @keyframes hint { from { fill: var(--land); } to { fill: var(--hint); } }
+  .zoom { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .zoom button { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface); color: var(--ink); font-size: 18px; cursor: pointer; }
+  .tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--surface); font-size: 13px; padding: 5px 9px; border-radius: 7px; transform: translate(-50%, -130%); white-space: nowrap; display: none; }
+  .loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink-2); font-size: 15px; text-align: center; padding: 20px; }
+  .credit { font-size: 11px; color: var(--muted); margin-top: 6px; text-align: right; }
+  .credit a { color: inherit; }
+
+  .lists { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+  .cont { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; }
+  .cont.off { display: none; }
+  .cont h3 { margin: 0 0 8px; font-size: 14px; display: flex; justify-content: space-between; align-items: baseline; }
+  .cont h3 span { font-size: 12.5px; color: var(--ink-2); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .cont .mini { height: 4px; border-radius: 2px; background: var(--surface-2); margin-bottom: 8px; overflow: hidden; }
+  .cont .mini i { display: block; height: 100%; background: var(--found); width: 0; transition: width .3s; }
+  .cont ul { list-style: none; padding: 0; margin: 0; font-size: 13.5px; columns: 1; }
+  .cont li { padding: 2px 0; break-inside: avoid; }
+  .cont li.new { animation: pop .6s ease-out; }
+  .cont li.miss { color: var(--missing); }
+  @keyframes pop { from { background: color-mix(in srgb, var(--found) 30%, transparent); } }
+
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: grid; place-items: center; padding: 20px; z-index: 20; }
+  .modal.hidden { display: none; }
+  .modal .box { background: var(--surface); color: var(--ink); border-radius: 18px; padding: 26px 26px 20px; width: min(420px, 100%); text-align: center; box-shadow: 0 30px 80px rgba(0,0,0,.35); }
+  .modal h2 { margin: 0 0 4px; font-size: 22px; }
+  .modal .big { font-size: 54px; font-weight: 700; letter-spacing: -0.03em; color: var(--found); margin: 8px 0 0; }
+  .modal p { color: var(--ink-2); margin: 6px 0; }
+  .modal .row { display: flex; gap: 8px; justify-content: center; margin-top: 18px; flex-wrap: wrap; }
+  .hidden { display: none !important; }
+
+  @media (max-width: 1000px) { .lists { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 640px) {
+    .wrap { padding: 12px 12px 30px; }
+    .bar { grid-template-columns: 1fr 1fr; }
+    .input-wrap { grid-column: 1 / -1; }
+    .stat { min-width: 0; }
+    .lists { grid-template-columns: 1fr; }
+    #guess { font-size: 18px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>¿Cuántos <span>países</span> sabes?</h1>
+    <div class="controls">
+      <select id="region" aria-label="Región">
+        <option value="all">🌍 Todo el mundo</option>
+        <option value="Europa">Europa</option>
+        <option value="Asia">Asia</option>
+        <option value="África">África</option>
+        <option value="América">América</option>
+        <option value="Oceanía">Oceanía</option>
+      </select>
+      <select id="time" aria-label="Tiempo">
+        <option value="10">10 min</option>
+        <option value="15" selected>15 min</option>
+        <option value="20">20 min</option>
+        <option value="0">Sin límite</option>
+      </select>
+      <button class="btn" id="hintBtn" title="Hace parpadear en el mapa un país que te falta">💡 Pista</button>
+      <button class="btn danger" id="giveUp">Rendirse</button>
+      <button class="btn primary" id="restart">Reiniciar</button>
+    </div>
+  </header>
+
+  <div class="bar">
+    <div class="input-wrap">
+      <input id="guess" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Escribe un país… (el tiempo empieza al escribir)" aria-label="Escribe un país" />
+      <span class="feedback" id="feedback"></span>
+    </div>
+    <div class="stat"><b id="score">0 / 197</b><small>países</small></div>
+    <div class="stat" id="timeBox"><b id="clock">15:00</b><small id="clockLabel">tiempo</small></div>
+  </div>
+  <div class="progress"><i id="prog"></i></div>
+
+  <div class="map-card" id="mapCard">
+    <svg id="map" viewBox="0 0 1010 660" role="img" aria-label="Mapa del mundo"></svg>
+    <div class="zoom">
+      <button id="zin" aria-label="Acercar">+</button>
+      <button id="zout" aria-label="Alejar">−</button>
+      <button id="zreset" aria-label="Ver todo" style="font-size:14px">⤢</button>
+    </div>
+    <div class="tip" id="tip"></div>
+    <div class="loading" id="loading">Cargando mapa…</div>
+  </div>
+  <div class="credit">Mapa: <a href="https://github.com/VictorCazanave/svg-maps" target="_blank" rel="noopener">svg-maps/world</a> (CC BY 4.0) · Arrastra para moverte, rueda o botones para hacer zoom</div>
+
+  <div class="lists" id="lists"></div>
+</div>
+
+<div class="modal hidden" id="endModal">
+  <div class="box">
+    <h2 id="endTitle">¡Se acabó el tiempo!</h2>
+    <div class="big" id="endScore">0</div>
+    <p id="endSub"></p>
+    <p id="endBest"></p>
+    <div class="row">
+      <button class="btn" id="seeMap">Ver lo que faltó</button>
+      <button class="btn primary" id="again">Jugar otra vez</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+// ---------- Países (193 de la ONU + Vaticano, Palestina, Kosovo y Taiwán) ----------
+// código ISO: [continente, nombre, ...otras formas aceptadas]
+const C = {
+  // Europa (46)
+  al:['Europa','Albania'], ad:['Europa','Andorra'], de:['Europa','Alemania'], at:['Europa','Austria'],
+  by:['Europa','Bielorrusia','Belarús','Belarus'], be:['Europa','Bélgica'], ba:['Europa','Bosnia y Herzegovina','Bosnia','Bosnia Herzegovina'],
+  bg:['Europa','Bulgaria'], hr:['Europa','Croacia'], cy:['Europa','Chipre'], cz:['Europa','Chequia','República Checa'],
+  dk:['Europa','Dinamarca'], sk:['Europa','Eslovaquia'], si:['Europa','Eslovenia'], es:['Europa','España'],
+  ee:['Europa','Estonia'], fi:['Europa','Finlandia'], fr:['Europa','Francia'], gr:['Europa','Grecia'], hu:['Europa','Hungría'],
+  ie:['Europa','Irlanda'], is:['Europa','Islandia'], it:['Europa','Italia'], xk:['Europa','Kosovo'], lv:['Europa','Letonia'],
+  li:['Europa','Liechtenstein'], lt:['Europa','Lituania'], lu:['Europa','Luxemburgo'], mk:['Europa','Macedonia del Norte','Macedonia'],
+  mt:['Europa','Malta'], md:['Europa','Moldavia','Moldova'], mc:['Europa','Mónaco'], me:['Europa','Montenegro'],
+  no:['Europa','Noruega'], nl:['Europa','Países Bajos','Holanda'], pl:['Europa','Polonia'], pt:['Europa','Portugal'],
+  gb:['Europa','Reino Unido','Gran Bretaña','Inglaterra','UK'], ro:['Europa','Rumanía','Rumania'], ru:['Europa','Rusia'],
+  sm:['Europa','San Marino'], rs:['Europa','Serbia'], se:['Europa','Suecia'], ch:['Europa','Suiza'], ua:['Europa','Ucrania'],
+  va:['Europa','Vaticano','Ciudad del Vaticano','Santa Sede'],
+  // Asia (48)
+  af:['Asia','Afganistán'], sa:['Asia','Arabia Saudí','Arabia Saudita','Arabia'], am:['Asia','Armenia'], az:['Asia','Azerbaiyán'],
+  bh:['Asia','Baréin','Bahréin','Bahrein','Bahrain'], bd:['Asia','Bangladés','Bangladesh'], mm:['Asia','Birmania','Myanmar'],
+  bt:['Asia','Bután'], bn:['Asia','Brunéi','Brunei'], kh:['Asia','Camboya'], qa:['Asia','Catar','Qatar'], cn:['Asia','China'],
+  kp:['Asia','Corea del Norte'], kr:['Asia','Corea del Sur'], ae:['Asia','Emiratos Árabes Unidos','Emiratos Árabes','Emiratos','EAU'],
+  ph:['Asia','Filipinas'], ge:['Asia','Georgia'], in:['Asia','India'], id:['Asia','Indonesia'], iq:['Asia','Irak','Iraq'],
+  ir:['Asia','Irán'], il:['Asia','Israel'], jp:['Asia','Japón'], jo:['Asia','Jordania'], kz:['Asia','Kazajistán','Kazajstán','Kazakhstan'],
+  kg:['Asia','Kirguistán','Kirguizistán'], kw:['Asia','Kuwait'], la:['Asia','Laos'], lb:['Asia','Líbano'], my:['Asia','Malasia'],
+  mv:['Asia','Maldivas'], mn:['Asia','Mongolia'], np:['Asia','Nepal'], om:['Asia','Omán'], pk:['Asia','Pakistán'],
+  ps:['Asia','Palestina'], sg:['Asia','Singapur'], sy:['Asia','Siria'], lk:['Asia','Sri Lanka'], th:['Asia','Tailandia'],
+  tw:['Asia','Taiwán'], tj:['Asia','Tayikistán'], tl:['Asia','Timor Oriental','Timor Leste','Timor'], tm:['Asia','Turkmenistán'],
+  tr:['Asia','Turquía'], uz:['Asia','Uzbekistán'], vn:['Asia','Vietnam'], ye:['Asia','Yemen'],
+  // África (54)
+  ao:['África','Angola'], dz:['África','Argelia'], bj:['África','Benín'], bw:['África','Botsuana','Botswana'],
+  bf:['África','Burkina Faso'], bi:['África','Burundi'], cv:['África','Cabo Verde'], cm:['África','Camerún'],
+  td:['África','Chad'], km:['África','Comoras'], cg:['África','Congo','República del Congo','Congo Brazzaville'],
+  cd:['África','República Democrática del Congo','RD Congo','RDC','Congo Kinshasa','Zaire'], ci:['África','Costa de Marfil'],
+  eg:['África','Egipto'], er:['África','Eritrea'], sz:['África','Esuatini','Eswatini','Suazilandia'], et:['África','Etiopía'],
+  ga:['África','Gabón'], gm:['África','Gambia'], gh:['África','Ghana'], gn:['África','Guinea','Guinea Conakry'],
+  gq:['África','Guinea Ecuatorial'], gw:['África','Guinea-Bisáu','Guinea Bissau','Guinea Bisau'], ke:['África','Kenia','Kenya'],
+  ls:['África','Lesoto','Lesotho'], lr:['África','Liberia'], ly:['África','Libia'], mg:['África','Madagascar'],
+  mw:['África','Malaui','Malawi'], ml:['África','Malí'], ma:['África','Marruecos'], mu:['África','Mauricio'],
+  mr:['África','Mauritania'], mz:['África','Mozambique'], na:['África','Namibia'], ne:['África','Níger'], ng:['África','Nigeria'],
+  cf:['África','República Centroafricana','Centroafricana'], rw:['África','Ruanda','Rwanda'], st:['África','Santo Tomé y Príncipe','Santo Tomé'],
+  sn:['África','Senegal'], sc:['África','Seychelles'], sl:['África','Sierra Leona'], so:['África','Somalia'],
+  za:['África','Sudáfrica'], sd:['África','Sudán'], ss:['África','Sudán del Sur'], tz:['África','Tanzania'], tg:['África','Togo'],
+  tn:['África','Túnez'], ug:['África','Uganda'], dj:['África','Yibuti','Djibouti'], zm:['África','Zambia'], zw:['África','Zimbabue','Zimbabwe'],
+  // América (35)
+  ag:['América','Antigua y Barbuda','Antigua'], ar:['América','Argentina'], bs:['América','Bahamas'], bb:['América','Barbados'],
+  bz:['América','Belice'], bo:['América','Bolivia'], br:['América','Brasil'], ca:['América','Canadá'], cl:['América','Chile'],
+  co:['América','Colombia'], cr:['América','Costa Rica'], cu:['América','Cuba'], dm:['América','Dominica'], ec:['América','Ecuador'],
+  sv:['América','El Salvador'], us:['América','Estados Unidos','EEUU','EE UU','USA','Estados Unidos de América'],
+  gd:['América','Granada'], gt:['América','Guatemala'], gy:['América','Guyana'], ht:['América','Haití'], hn:['America','Honduras'],
+  jm:['América','Jamaica'], mx:['América','México','Méjico'], ni:['América','Nicaragua'], pa:['América','Panamá'],
+  py:['América','Paraguay'], pe:['América','Perú'], do:['América','República Dominicana'], kn:['América','San Cristóbal y Nieves'],
+  vc:['América','San Vicente y las Granadinas','San Vicente'], lc:['América','Santa Lucía'], sr:['América','Surinam','Suriname'],
+  tt:['América','Trinidad y Tobago','Trinidad'], uy:['América','Uruguay'], ve:['América','Venezuela'],
+  // Oceanía (14)
+  au:['Oceanía','Australia'], fj:['Oceanía','Fiyi','Fiji'], mh:['Oceanía','Islas Marshall','Marshall'], sb:['Oceanía','Islas Salomón','Salomón'],
+  ki:['Oceanía','Kiribati'], fm:['Oceanía','Micronesia'], nr:['Oceanía','Nauru'], nz:['Oceanía','Nueva Zelanda'],
+  pw:['Oceanía','Palaos','Palau'], pg:['Oceanía','Papúa Nueva Guinea','Papua'], ws:['Oceanía','Samoa'], to:['Oceanía','Tonga'],
+  tv:['Oceanía','Tuvalu'], vu:['Oceanía','Vanuatu'],
+};
+C.hn[0] = 'América';
+const CONTINENTS = ['Europa', 'Asia', 'África', 'América', 'Oceanía'];
+
+// Territorios que se colorean (más claro) al acertar el país del que dependen
+const PARENT = {
+  gl:'dk', fo:'dk', gf:'fr', gp:'fr', mq:'fr', re:'fr', yt:'fr', pf:'fr', nc:'fr', pm:'fr', bl:'fr', mf:'fr', tf:'fr', wf:'fr',
+  pr:'us', gu:'us', vi:'us', as:'us', mp:'us', 'um-dq':'us', 'um-fq':'us', 'um-hq':'us', 'um-jq':'us', 'um-mq':'us', 'um-wq':'us',
+  aw:'nl', cw:'nl', sx:'nl', bq:'nl', bm:'gb', ky:'gb', ms:'gb', vg:'gb', tc:'gb', ai:'gb', fk:'gb', gs:'gb', io:'gb', sh:'gb',
+  pn:'gb', gi:'gb', gg:'gb', je:'gb', im:'gb', hk:'cn', mo:'cn', ax:'fi', sj:'no', bv:'no', nf:'au', cx:'au', cc:'au', hm:'au',
+  ck:'nz', nu:'nz', tk:'nz',
+};
+
+// ---------- Normalización de lo que se escribe ----------
+const norm = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .replace(/[^a-z0-9ñ ]/g, ' ').replace(/\s+/g, ' ').trim().replace(/^(el|la|los|las) /, '');
+const ALIAS = new Map();
+for (const [code, [, ...names]] of Object.entries(C)) for (const n of names) ALIAS.set(norm(n), code);
+const ALIAS_KEYS = [...ALIAS.keys()];
+
+// ---------- Estado ----------
+const $ = (s) => document.querySelector(s);
+const guess = $('#guess');
+let found = new Set();
+let order = [];
+let region = 'all';
+let running = false, finished = false, startAt = 0, timer = null, hintsUsed = 0, pendingTimer = null;
+const targets = () => Object.keys(C).filter((c) => region === 'all' || C[c][0] === region);
+const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
+
+// ---------- Mapa ----------
+const svg = $('#map');
+const NS = 'http://www.w3.org/2000/svg';
+const groups = {};
+let full = { x: 0, y: 0, w: 1010, h: 660 };
+let vb = { ...full };
+function setVB(v) {
+  vb = v;
+  svg.setAttribute('viewBox', `${v.x} ${v.y} ${v.w} ${v.h}`);
+  const k = full.w / v.w; // radio de los puntos de países pequeños según zoom
+  svg.querySelectorAll('circle').forEach((c) => c.setAttribute('r', Math.max(1.2, 3.6 / Math.sqrt(k))));
+}
+
+async function loadMap() {
+  let world;
+  try {
+    world = (await import('https://cdn.jsdelivr.net/npm/@svg-maps/world@2.0.0/+esm')).default;
+  } catch (e) {
+    $('#loading').textContent = 'No se pudo cargar el mapa. Comprueba tu conexión y recarga la página.';
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  for (const loc of world.locations) {
+    const g = document.createElementNS(NS, 'g');
+    const isCountry = !!C[loc.id];
+    g.setAttribute('class', isCountry ? 'c' : PARENT[loc.id] ? 't' : 'o');
+    g.dataset.id = loc.id;
+    const p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', loc.path);
+    g.appendChild(p);
+    frag.appendChild(g);
+    groups[loc.id] = g;
+  }
+  svg.appendChild(frag);
+  // Países muy pequeños: un punto para que se vean
+  for (const id of Object.keys(C)) {
+    const g = groups[id];
+    if (!g) continue;
+    const b = g.getBBox();
+    if (Math.max(b.width, b.height) < 7) {
+      const c = document.createElementNS(NS, 'circle');
+      c.setAttribute('cx', b.x + b.width / 2);
+      c.setAttribute('cy', b.y + b.height / 2);
+      g.appendChild(c);
+    }
+  }
+  $('#loading').remove();
+  applyRegion(false);
+  paint();
+}
+
+function regionBox() {
+  if (region === 'all') return full;
+  if (region === 'Europa') return fitAspect({ x: 400, y: 172, w: 200, h: 195 });
+  // Para encuadrar, ignora países con territorios muy alejados
+  const skip = { Oceanía: ['ki'], América: ['cl', 'ec'], Asia: [], África: [] }[region] || [];
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  for (const id of targets()) {
+    if (!groups[id] || skip.includes(id)) continue;
+    const b = groups[id].getBBox();
+    x1 = Math.min(x1, b.x); y1 = Math.min(y1, b.y); x2 = Math.max(x2, b.x + b.width); y2 = Math.max(y2, b.y + b.height);
+  }
+  const pad = 20;
+  return fitAspect({ x: x1 - pad, y: y1 - pad, w: x2 - x1 + 2 * pad, h: y2 - y1 + 2 * pad });
+}
+function fitAspect(b) {
+  const ar = full.w / full.h;
+  if (b.w / b.h > ar) { const h = b.w / ar; return { x: b.x, y: b.y - (h - b.h) / 2, w: b.w, h }; }
+  const w = b.h * ar; return { x: b.x - (w - b.w) / 2, y: b.y, w, h: b.h };
+}
+
+function applyRegion(reset = true) {
+  region = $('#region').value;
+  for (const [id, g] of Object.entries(groups)) {
+    const on = region === 'all' || (C[id] ? C[id][0] === region : PARENT[id] && C[PARENT[id]] && C[PARENT[id]][0] === region);
+    g.classList.toggle('off', !on);
+  }
+  document.querySelectorAll('.cont').forEach((el) => el.classList.toggle('off', region !== 'all' && el.dataset.c !== region));
+  if (Object.keys(groups).length) setVB(regionBox());
+  if (reset) restart();
+}
+
+function paint(missing = false) {
+  for (const [id, g] of Object.entries(groups)) {
+    if (C[id]) {
+      g.classList.toggle('found', found.has(id));
+      g.classList.toggle('missing', missing && !found.has(id) && targets().includes(id));
+    } else if (PARENT[id]) g.classList.toggle('found', found.has(PARENT[id]));
+  }
+}
+
+// Zoom y desplazamiento
+function zoom(f, cx, cy) {
+  const nw = Math.min(full.w * 1.2, Math.max(25, vb.w / f));
+  const nh = nw * (full.h / full.w);
+  cx ??= vb.x + vb.w / 2; cy ??= vb.y + vb.h / 2;
+  setVB({ x: cx - (cx - vb.x) * (nw / vb.w), y: cy - (cy - vb.y) * (nh / vb.h), w: nw, h: nh });
+}
+function toSvg(e) {
+  const r = svg.getBoundingClientRect();
+  return { x: vb.x + ((e.clientX - r.left) / r.width) * vb.w, y: vb.y + ((e.clientY - r.top) / r.height) * vb.h };
+}
+svg.addEventListener('wheel', (e) => { e.preventDefault(); const p = toSvg(e); zoom(e.deltaY < 0 ? 1.25 : 0.8, p.x, p.y); }, { passive: false });
+$('#zin').onclick = () => zoom(1.5);
+$('#zout').onclick = () => zoom(1 / 1.5);
+$('#zreset').onclick = () => setVB(regionBox());
+let drag = null;
+const pointers = new Map();
+svg.addEventListener('pointerdown', (e) => {
+  pointers.set(e.pointerId, e);
+  svg.setPointerCapture(e.pointerId);
+  if (pointers.size === 1) drag = { x: e.clientX, y: e.clientY, vb: { ...vb } };
+  else drag = null;
+  svg.classList.add('dragging');
+});
+svg.addEventListener('pointermove', (e) => {
+  if (pointers.has(e.pointerId) && pointers.size === 2) {
+    const prev = pointers.get(e.pointerId);
+    const other = [...pointers.values()].find((p) => p.pointerId !== e.pointerId);
+    const d0 = Math.hypot(prev.clientX - other.clientX, prev.clientY - other.clientY);
+    const d1 = Math.hypot(e.clientX - other.clientX, e.clientY - other.clientY);
+    if (d0 > 0) { const m = toSvg({ clientX: (e.clientX + other.clientX) / 2, clientY: (e.clientY + other.clientY) / 2 }); zoom(d1 / d0, m.x, m.y); }
+    pointers.set(e.pointerId, e);
+    return;
+  }
+  if (drag) {
+    const r = svg.getBoundingClientRect();
+    setVB({ ...vb, x: drag.vb.x - ((e.clientX - drag.x) / r.width) * vb.w, y: drag.vb.y - ((e.clientY - drag.y) / r.height) * vb.h });
+  }
+  showTip(e);
+});
+const endDrag = (e) => { pointers.delete(e.pointerId); drag = null; if (!pointers.size) svg.classList.remove('dragging'); };
+svg.addEventListener('pointerup', endDrag);
+svg.addEventListener('pointercancel', endDrag);
+svg.addEventListener('pointerleave', () => ($('#tip').style.display = 'none'));
+
+// Nombre al pasar el ratón (solo países acertados, o todos al terminar)
+function showTip(e) {
+  const tip = $('#tip');
+  const g = e.target.closest && e.target.closest('g');
+  const id = g && g.dataset.id;
+  const code = id && (C[id] ? id : null);
+  if (code && (found.has(code) || finished)) {
+    const r = $('#mapCard').getBoundingClientRect();
+    tip.textContent = C[code][1];
+    tip.style.left = e.clientX - r.left + 'px';
+    tip.style.top = e.clientY - r.top + 'px';
+    tip.style.display = 'block';
+  } else tip.style.display = 'none';
+}
+
+// ---------- Listas por continente ----------
+function buildLists() {
+  $('#lists').innerHTML = CONTINENTS.map((c) => `<div class="cont" data-c="${c}"><h3>${c}<span id="n-${c}"></span></h3><div class="mini"><i id="b-${c}"></i></div><ul id="l-${c}"></ul></div>`).join('');
+}
+function renderLists(newId, missing = false) {
+  for (const c of CONTINENTS) {
+    const all = Object.keys(C).filter((id) => C[id][0] === c);
+    const got = all.filter((id) => found.has(id));
+    $('#n-' + c).textContent = `${got.length} / ${all.length}`;
+    $('#b-' + c).style.width = (got.length / all.length) * 100 + '%';
+    const items = (missing ? all : got).map((id) => ({ id, name: C[id][1], miss: !found.has(id) })).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    $('#l-' + c).innerHTML = items.map((i) => `<li class="${i.id === newId ? 'new' : ''} ${i.miss ? 'miss' : ''}">${i.miss ? '✗ ' : '✓ '}${i.name}</li>`).join('');
+  }
+  const t = targets();
+  const n = t.filter((id) => found.has(id)).length;
+  $('#score').textContent = `${n} / ${t.length}`;
+  $('#prog').style.width = (n / t.length) * 100 + '%';
+}
+
+// ---------- Juego ----------
+const totalSecs = () => parseInt($('#time').value, 10) * 60;
+const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+function tick() {
+  const el = Math.floor((Date.now() - startAt) / 1000);
+  const tot = totalSecs();
+  if (tot) {
+    const left = Math.max(0, tot - el);
+    $('#clock').textContent = fmt(left);
+    $('#timeBox').classList.toggle('low', left <= 60);
+    if (left <= 0) finish('time');
+  } else $('#clock').textContent = fmt(el);
+}
+function start() {
+  if (running || finished) return;
+  running = true;
+  startAt = Date.now();
+  $('#time').disabled = true;
+  timer = setInterval(tick, 250);
+}
+function accept(code) {
+  clearTimeout(pendingTimer);
+  found.add(code);
+  order.push(code);
+  guess.value = '';
+  guess.classList.remove('dup');
+  guess.classList.add('ok');
+  setTimeout(() => guess.classList.remove('ok'), 350);
+  $('#feedback').textContent = '✓ ' + C[code][1];
+  const g = groups[code];
+  if (g) { g.classList.remove('hint'); g.classList.add('flash'); setTimeout(() => g.classList.remove('flash'), 1000); }
+  paint();
+  renderLists(code);
+  store.set('paises.progress', { region, found: [...found], hintsUsed });
+  if (targets().every((id) => found.has(id))) finish('all');
+}
+function check() {
+  if (finished) return;
+  const v = norm(guess.value);
+  if (!v) { $('#feedback').textContent = ''; return; }
+  start();
+  clearTimeout(pendingTimer);
+  const code = ALIAS.get(v);
+  if (!code || !targets().includes(code)) { guess.classList.remove('dup'); $('#feedback').textContent = ''; return; }
+  if (found.has(code)) { guess.classList.add('dup'); $('#feedback').textContent = 'Ya lo tienes'; return; }
+  // Si es el principio de otro país que te falta (Guinea → Guinea Ecuatorial), espera un momento
+  const longer = ALIAS_KEYS.some((k) => k !== v && k.startsWith(v) && !found.has(ALIAS.get(k)) && ALIAS.get(k) !== code && targets().includes(ALIAS.get(k)));
+  if (longer) { pendingTimer = setTimeout(() => accept(code), 1100); return; }
+  accept(code);
+}
+guess.addEventListener('input', check);
+guess.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  const code = ALIAS.get(norm(guess.value));
+  if (code && !found.has(code) && targets().includes(code)) accept(code);
+});
+
+function finish(reason) {
+  if (finished) return;
+  finished = true;
+  running = false;
+  clearInterval(timer);
+  clearTimeout(pendingTimer);
+  guess.disabled = true;
+  document.querySelectorAll('.c.hint').forEach((g) => g.classList.remove('hint'));
+  const t = targets();
+  const n = t.filter((id) => found.has(id)).length;
+  const secs = Math.floor((Date.now() - startAt) / 1000);
+  const key = `paises.best.${region}`;
+  const best = store.get(key);
+  const isBest = !best || n > best.n || (n === best.n && secs < best.secs);
+  if (isBest && n > 0) store.set(key, { n, secs, date: new Date().toISOString().slice(0, 10) });
+  $('#endTitle').textContent = reason === 'all' ? '¡Increíble, los tienes todos! 🎉' : reason === 'time' ? '¡Se acabó el tiempo!' : 'Partida terminada';
+  $('#endScore').textContent = `${n} / ${t.length}`;
+  $('#endSub').textContent = `${Math.round((n / t.length) * 100)} % en ${fmt(secs)}${hintsUsed ? ` · ${hintsUsed} pista${hintsUsed > 1 ? 's' : ''}` : ''}`;
+  $('#endBest').textContent = isBest && n > 0 ? '🏆 ¡Nuevo récord!' : best ? `Tu récord: ${best.n} / ${t.length} (${fmt(best.secs)})` : '';
+  $('#endModal').classList.remove('hidden');
+  paint(true);
+  renderLists(null, true);
+  store.set('paises.progress', null);
+}
+function restart() {
+  clearInterval(timer);
+  clearTimeout(pendingTimer);
+  found = new Set(); order = []; running = false; finished = false; hintsUsed = 0;
+  guess.disabled = false; guess.value = ''; $('#feedback').textContent = '';
+  $('#time').disabled = false;
+  $('#timeBox').classList.remove('low');
+  $('#clock').textContent = totalSecs() ? fmt(totalSecs()) : '0:00';
+  $('#clockLabel').textContent = totalSecs() ? 'tiempo restante' : 'tiempo';
+  $('#endModal').classList.add('hidden');
+  document.querySelectorAll('.c').forEach((g) => g.classList.remove('hint', 'missing', 'found'));
+  paint();
+  renderLists();
+  store.set('paises.progress', null);
+  guess.focus();
+}
+
+$('#restart').onclick = restart;
+$('#again').onclick = restart;
+$('#giveUp').onclick = () => { if (!finished && (running || found.size)) finish('giveup'); };
+$('#seeMap').onclick = () => { $('#endModal').classList.add('hidden'); setVB(regionBox()); };
+$('#region').onchange = () => applyRegion(true);
+$('#time').onchange = () => { if (!running) restart(); };
+$('#hintBtn').onclick = () => {
+  if (finished) return;
+  const left = targets().filter((id) => !found.has(id) && groups[id]);
+  if (!left.length) return;
+  document.querySelectorAll('.c.hint').forEach((g) => g.classList.remove('hint'));
+  const id = left[Math.floor(Math.random() * left.length)];
+  groups[id].classList.add('hint');
+  hintsUsed++;
+  start();
+  const b = groups[id].getBBox();
+  const w = Math.max(b.width * 4, 120);
+  setVB(fitAspect({ x: b.x + b.width / 2 - w / 2, y: b.y + b.height / 2 - w * 0.3, w, h: w * 0.6 }));
+  $('#feedback').textContent = '💡 Parpadea en el mapa';
+  guess.focus();
+};
+
+buildLists();
+restart();
+loadMap();
+</script>
+</body>
+</html>
